@@ -777,3 +777,25 @@ agent = AgentRuntime(router=my_router, skills=skills, long_term=my_ltm)
 - ✅ 新增 Router 文件（或者扩展已有的 LLM/规则路由）；
 - ✅ 在 Workflow 中组合多步 Agent 行为；
 - ✅ 在 Memory 层显式记录和回放运行轨迹。
+
+---
+
+## 🤝 贡献与支持 (Contribution)
+
+**Next AI PlantUML** 是一个开源项目，我们需要您的帮助让它变得更好！
+
+*   **给个 Star** ⭐：如果您觉得这个项目对您有帮助，请点击右上角的 Star，这是对我最大的鼓励！
+*   **提交 Issue** 🐛：发现 Bug 或有新功能建议？欢迎提交 Issue。
+*   **提交 PR** 🧑‍💻：欢迎贡献代码，无论是修复 Bug 还是增加新特性。
+
+---
+
+## 👤 作者 (Author)
+
+**Haoze Zheng**
+
+*   🎓 **School**: Xinjiang University (XJU)
+*   📧 **Email**: zhenghaoze@stu.xju.edu.cn
+*   🐱 **GitHub**: [mire403](https://github.com/mire403)
+
+---

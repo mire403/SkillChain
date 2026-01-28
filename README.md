@@ -335,3 +335,124 @@ Agent 是一个很薄的 runtime，负责：
 2. 调用 Router 选 Skill
 3. 执行 Skill
 4. 用显式的 Memory 记录决策与结果
+
+skillchain/agent/runtime.py：
+```python
+# skillchain/agent/runtime.py
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, Optional
+from skillchain.memory.long_term import LongTermMemory
+from skillchain.memory.short_term import ShortTermMemory
+from skillchain.router.base import RouterContext, SkillRouter
+from skillchain.skills.base import Skill, SkillContext
+from skillchain.types import SkillCall, SkillResult
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """Agent runtime config."""
+    agent_name: str = "skillchain-agent"
+
+
+class AgentRuntime:
+    """
+    Agent runtime: router -> execute selected skill -> update explicit memory.
+    """
+
+    def __init__(
+        self,
+        *,
+        router: SkillRouter,
+        skills: Iterable[Skill],
+        short_term: Optional[ShortTermMemory] = None,
+        long_term: Optional[LongTermMemory] = None,
+        config: Optional[AgentConfig] = None,
+    ) -> None:
+        self._router = router
+        self._skills: Dict[str, Skill] = {s.name: s for s in skills}
+        self.short_term = short_term or ShortTermMemory()
+        self.long_term = long_term
+        self.config = config or AgentConfig()
+
+    def list_skills(self) -> Dict[str, str]:
+        return {name: getattr(skill, "description", "") for name, skill in self._skills.items()}
+
+    async def step(self, *, user_intent: str) -> SkillResult:
+        available = [{"name": n, "description": d} for n, d in self.list_skills().items()]
+        router_ctx = RouterContext(
+            short_term_context=self.short_term.context,
+            long_term_summary=self.long_term.get_summary() if self.long_term else None,
+        )
+        call: SkillCall = await self._router.select_skill(
+            user_intent=user_intent,
+            available_skills=available,
+            ctx=router_ctx,
+        )
+        self.short_term.record_decision(call)
+
+        skill = self._skills.get(call.skill_name)
+        if not skill:
+            result = SkillResult(
+                skill_name=call.skill_name,
+                output={},
+                success=False,
+                error=f"Unknown skill selected by router: {call.skill_name}",
+            )
+            self.short_term.record_result(result)
+            return result
+
+        ctx = SkillContext(request_id=str(uuid.uuid4()), short_term_context=self.short_term.context)
+        try:
+            output = skill.run(skill_input=call.skill_input, ctx=ctx)
+            result = SkillResult(skill_name=skill.name, output=output, success=True)
+        except Exception as e:
+            result = SkillResult(skill_name=skill.name, output={}, success=False, error=str(e))
+
+        self.short_term.record_result(result)
+        return result
+```
+注意：
+- Agent 只负责“调度 + 记录”，不写死任何策略逻辑
+- 执行结果也被封装成 `SkillResult`（在 skillchain/types.py 中）：
+```python
+# skillchain/types.py
+@dataclass(frozen=True)
+class SkillResult:
+    """An execution artifact: structured output produced by a skill."""
+
+    skill_name: str
+    output: JSONDict
+    success: bool = True
+    error: Optional[str] = None
+```
+### 5. 显式 Memory：短期 & 长期 🧠
+**短期记忆：ShortTermMemory（单次运行上下文）**，skillchain/memory/short_term.py：
+```python
+# skillchain/memory/short_term.py
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+from skillchain.types import SkillCall, SkillResult
+
+
+@dataclass
+class ShortTermMemory:
+    """
+    Execution-context memory for a single run/session.
+
+    Explicit structure (not prompt concatenation).
+    """
+
+    context: Dict[str, Any] = field(default_factory=dict)
+    decisions: List[SkillCall] = field(default_factory=list)
+    results: List[SkillResult] = field(default_factory=list)
+
+    def record_decision(self, call: SkillCall) -> None:
+        self.decisions.append(call)
+
+    def record_result(self, result: SkillResult) -> None:
+        self.results.append(result)
+```
+特点：
+- 用 `context / decisions / results` 显式保存运行轨迹
+- 以后你可以写自己的 summarizer，而不用从 prompt 里解析

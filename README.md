@@ -11,7 +11,6 @@
 [![Ruff](https://img.shields.io/badge/Lint-Ruff-FF6F61.svg)](https://docs.astral.sh/ruff/)
 ![LLM](https://img.shields.io/badge/LLM-OpenRouter%20Adapter-4B0082.svg)
 
-
   </div>
   
 SkillChain 是一个面向工程与研究的 **Agent Skill Framework**，目标不是做一个“能聊天就行”的 demo，而是：

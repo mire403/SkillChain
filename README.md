@@ -456,3 +456,211 @@ class ShortTermMemory:
 特点：
 - 用 `context / decisions / results` 显式保存运行轨迹
 - 以后你可以写自己的 summarizer，而不用从 prompt 里解析
+
+**长期记忆：LongTermMemory（JSON 持久化）**，skillchain/memory/long_term.py：
+```python
+# skillchain/memory/long_term.py
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class LongTermMemory:
+    """
+    Persistent knowledge store.
+
+    Intentionally simple JSON file backend to keep the framework inspectable.
+    """
+
+    path: Path
+    data: Dict[str, Any] = field(default_factory=dict)
+
+    def load(self) -> None:
+        if not self.path.exists():
+            self.data = {}
+            return
+        self.data = json.loads(self.path.read_text(encoding="utf-8") or "{}")
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def get_summary(self) -> Optional[str]:
+        """
+        Optional: small human/LLM-readable summary for routers.
+        Keep it short and explicit.
+        """
+
+        if not self.data:
+            return None
+        keys = sorted(list(self.data.keys()))
+        return f"LongTermMemory keys: {keys}"
+```
+### 6. LLM Adapter：OpenRouter 统一封装 🌐
+任何用 LLM 的地方，都应该通过 `LLMAdapter` 抽象调用。
+**抽象接口**，skillchain/adapters/base.py：
+```python
+# skillchain/adapters/base.py
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    role: str  # "system" | "user" | "assistant" | "tool"
+    content: str
+
+
+@dataclass(frozen=True)
+class ChatCompletion:
+    content: str
+    raw: Optional[Dict[str, Any]] = None
+
+
+class LLMAdapter(ABC):
+    """
+    Unified LLM interface.
+    """
+
+    @abstractmethod
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.2,
+        max_tokens: Optional[int] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> ChatCompletion:
+        raise NotImplementedError
+```
+**OpenRouter 实现**，skillchain/adapters/openrouter.py：
+```python
+# skillchain/adapters/openrouter.py
+import os
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+from .base import ChatCompletion, ChatMessage, LLMAdapter
+
+
+@dataclass(frozen=True)
+class OpenRouterConfig:
+    api_key: str
+    base_url: str = "https://openrouter.ai/api/v1"
+    app_name: str = "skillchain"
+    http_referer: Optional[str] = None
+
+
+class OpenRouterAdapter(LLMAdapter):
+    """
+    OpenRouter adapter via HTTP.
+    """
+
+    def __init__(self, config: Optional[OpenRouterConfig] = None) -> None:
+        if config is None:
+            api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            if not api_key:
+                raise ValueError("Missing OPENROUTER_API_KEY for OpenRouterAdapter")
+            config = OpenRouterConfig(
+                api_key=api_key,
+                http_referer=os.getenv("OPENROUTER_HTTP_REFERER") or None,
+                app_name=os.getenv("OPENROUTER_APP_NAME") or "skillchain",
+            )
+        self._config = config
+
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: List[ChatMessage],
+        temperature: float = 0.2,
+        max_tokens: Optional[int] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> ChatCompletion:
+        url = f"{self._config.base_url}/chat/completions"
+        headers: Dict[str, str] = {
+            "Authorization": f"Bearer {self._config.api_key}",
+            "Content-Type": "application/json",
+            "X-Title": self._config.app_name,
+        }
+        if self._config.http_referer:
+            headers["HTTP-Referer"] = self._config.http_referer
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "temperature": temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if extra:
+            payload.update(extra)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        # OpenAI-compatible schema
+        content = data["choices"][0]["message"]["content"]
+        return ChatCompletion(content=content, raw=data)
+```
+> 上层代码（如 `LLMSemanticRouter`）只依赖 `LLMAdapter`，不会直接绑定某个 SDK。
+### 7. Workflows：策略编排（而非“巨型 prompt”）📋
+Workflow 是在 Agent 之上做多步流程，而不是用 prompt 控制一切。
+**抽象定义**，skillchain/workflows/base.py：
+```python
+# skillchain/workflows/base.py
+from abc import ABC, abstractmethod
+from typing import Any, Dict
+from skillchain.agent.runtime import AgentRuntime
+
+
+class Workflow(ABC):
+    """
+    High-level multi-step strategy.
+    """
+
+    @abstractmethod
+    async def run(self, *, agent: AgentRuntime, user_intent: str) -> Dict[str, Any]:
+        raise NotImplementedError
+```
+**参考实现：单步 workflow**，skillchain/workflows/single_step.py：
+```python
+# skillchain/workflows/single_step.py
+from typing import Any, Dict
+from skillchain.agent.runtime import AgentRuntime
+from .base import Workflow
+
+
+class SingleStepWorkflow(Workflow):
+    """Reference workflow: run exactly one router->skill step."""
+
+    async def run(self, *, agent: AgentRuntime, user_intent: str) -> Dict[str, Any]:
+        result = await agent.step(user_intent=user_intent)
+        return {
+            "result": result,
+            "short_term": {
+                "context": agent.short_term.context,
+                "decisions": agent.short_term.decisions,
+                "results": agent.short_term.results,
+            },
+        }
+```
+## ▶️ 运行说明（Windows / Cursor 友好）
+### 1. 安装依赖（开发模式）
+你当前环境下 `python` 不在 PATH，但有 Windows Launcher `py`，建议使用：
+```bash
+py -m pip install -e .[dev]
+```
+这会安装：主包 `skillchain`，开发依赖：`pytest`、`ruff`
+### 2. 不依赖 LLM 的本地运行（KeywordRouter）
+```bash
+py -m skillchain.cli "echo hello" --router keyword
+```

@@ -813,3 +813,7 @@ agent = AgentRuntime(router=my_router, skills=skills, long_term=my_ltm)
 *   🐱 **GitHub**: [mire403](https://github.com/mire403)
 
 ---
+
+<div align="center">
+  <sub>Made by Haoze Zheng. 2026 SkillChain.</sub>
+</div>

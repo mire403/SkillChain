@@ -1,0 +1,70 @@
+Metadata-Version: 2.4
+Name: skillchain
+Version: 0.1.0
+Summary: SkillChain: modular agent-skill framework (skills, routers, agent runtime, workflows)
+Author: SkillChain Contributors
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.26.0
+Requires-Dist: pydantic>=2.6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+Requires-Dist: ruff>=0.3.0; extra == "dev"
+
+# SkillChain
+
+SkillChain is an engineering-oriented **Agent Skill framework**.
+
+Mental model:
+- **Skills = functions**
+- **Router = policy**
+- **Agent = runtime**
+- **Workflow = program**
+
+## Architecture (layered, decoupled)
+
+LLM Adapter → Skills → Skill Router → Agent Runtime (+ explicit memory) → Workflows
+
+- LLM adapter: `skillchain/adapters/`
+- Skills: `skillchain/skills/` (no routing, no memory management, no calling other skills)
+- Router: `skillchain/router/` (selection only; no task execution)
+- Agent runtime: `skillchain/agent/` (router → invoke skill → update memory)
+- Memory: `skillchain/memory/` (explicit structures)
+- Workflows: `skillchain/workflows/` (multi-step orchestration)
+
+## Quick start (run locally)
+
+### 1) Install
+
+```bash
+python -m pip install -e .[dev]
+```
+
+### 2) Run (no API key needed)
+
+```bash
+python -m skillchain.cli "echo hello" --router keyword
+```
+
+### 3) Run with OpenRouter (optional)
+
+Set env var `OPENROUTER_API_KEY`, then:
+
+```bash
+python -m skillchain.cli "echo hello" --router llm --model openai/gpt-4o-mini
+```
+
+### 4) Tests
+
+```bash
+pytest -q
+```
+
+## Extending
+
+- Add a new skill in `skillchain/skills/` inheriting from `Skill`
+- Register it in your runtime `skills=[...]`
+- Add/modify routers in `skillchain/router/` to select among available skills
+- Encode strategies in workflows under `skillchain/workflows/`
+

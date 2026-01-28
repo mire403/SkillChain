@@ -2,7 +2,17 @@
 
 # 🧠 SkillChain
 
-</div>
+**下一代可组合 Agent Skill 框架：SkillChain**
+
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python)](https://www.python.org/)
+[![httpx](https://img.shields.io/badge/httpx-0.26%2B-000000.svg)](https://www.python-httpx.org/)
+[![pytest](https://img.shields.io/badge/tests-pytest-0A9EDC.svg?logo=pytest)](https://docs.pytest.org/)
+[![Ruff](https://img.shields.io/badge/Lint-Ruff-FF6F61.svg)](https://docs.astral.sh/ruff/)
+![LLM](https://img.shields.io/badge/LLM-OpenRouter%20Adapter-4B0082.svg)
+
+
+  <p align="center">
   
 SkillChain 是一个面向工程与研究的 **Agent Skill Framework**，目标不是做一个“能聊天就行”的 demo，而是：
 

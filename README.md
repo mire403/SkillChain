@@ -1,5 +1,9 @@
+<div align="center">
+
 # 🧠 SkillChain
 
+</div>
+  
 SkillChain 是一个面向工程与研究的 **Agent Skill Framework**，目标不是做一个“能聊天就行”的 demo，而是：
 
 - 把 **能力（Skills）** 做成显式、可复用的 Python 类  

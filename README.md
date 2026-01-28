@@ -22,7 +22,6 @@ SkillChain 是一个面向工程与研究的 **Agent Skill Framework**，目标�
 - 用 **Workflows** 定义多步策略  
 - 所有逻辑都可以 **阅读、调试、测试和扩展** 🛠️
 
-> 🧩 心智模型：  
 > Skills = functions（能力原语）  
 > Router = policy（决策策略）  
 > Agent = runtime（执行引擎）  

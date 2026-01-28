@@ -653,6 +653,9 @@ class SingleStepWorkflow(Workflow):
             },
         }
 ```
+
+---
+
 ## ▶️ 运行说明（Windows / Cursor 友好）
 ### 1. 安装依赖（开发模式）
 你当前环境下 `python` 不在 PATH，但有 Windows Launcher `py`，建议使用：
@@ -664,3 +667,113 @@ py -m pip install -e .[dev]
 ```bash
 py -m skillchain.cli "echo hello" --router keyword
 ```
+对应入口代码在skillchain/cli.py：
+```bash
+# skillchain/cli.py
+async def _amain(args: argparse.Namespace) -> int:
+    skills = [EchoSkill()]
+    ltm = LongTermMemory(path=Path(args.memory))
+    ltm.load()
+
+    if args.router == "llm":
+        from skillchain.adapters.openrouter import OpenRouterAdapter
+        router = LLMSemanticRouter(llm=OpenRouterAdapter(), model=args.model)
+    else:
+        router = KeywordRouter(default_skill="echo")
+
+    agent = AgentRuntime(router=router, skills=skills, long_term=ltm)
+    wf = SingleStepWorkflow()
+    out = await wf.run(agent=agent, user_intent=args.intent)
+    print(json.dumps(out, indent=2, ensure_ascii=False, default=str))
+    return 0
+```
+默认只注册了 `EchoSkill`，因此整条链路是：
+`user_intent` → `KeywordRouter` 选择 `echo` → `EchoSkill.run` → `ShortTermMemory` 记录 → 输出 JSON。
+### 3. 使用 OpenRouter 做语义路由（可选）
+设置环境变量：
+```bash
+setx OPENROUTER_API_KEY "your_api_key_here"
+```
+运行：
+```bash
+py -m skillchain.cli "echo hello" --router llm --model openai/gpt-4o-mini
+```
+此时会走：
+- `OpenRouterAdapter.chat` 调用 OpenRouter API
+- `LLMSemanticRouter` 用 LLM 挑一个 Skill（当前只有 `echo`）
+### 4. 运行测试
+```python
+py -m pytest -q
+```
+当前有一个核心测试，tests/test_runtime_keyword_router.py：
+```bash
+# tests/test_runtime_keyword_router.py
+import asyncio
+from skillchain.agent.runtime import AgentRuntime
+from skillchain.router.rule_based import KeywordRouter
+from skillchain.skills.echo import EchoSkill
+
+
+def test_agent_runtime_runs_echo_via_keyword_router() -> None:
+    async def run() -> dict:
+        agent = AgentRuntime(router=KeywordRouter(default_skill="echo"), skills=[EchoSkill()])
+        result = await agent.step(user_intent="please echo this")
+        assert result.success is True
+        assert result.skill_name == "echo"
+        assert result.output["echo"]["text"] == "please echo this"
+        return result.output
+
+    asyncio.run(run())
+```
+验证整条 pipeline：
+> Router → Skill → Result → Memory
+
+---
+
+## 🧩 扩展指南（如何在现有代码上加东西）
+### 1. 新增一个 Skill
+1. 新建文件，例如 `skillchain/skills/code_search.py`
+2. 继承 `Skill`：
+```bash
+from typing import Any, Dict
+from .base import Skill, SkillContext
+
+
+class CodeSearchSkill(Skill):
+    name = "code_search"
+    description = "Search codebase for symbols or patterns."
+
+    def run(self, *, skill_input: Dict[str, Any], ctx: SkillContext) -> Dict[str, Any]:
+        query = skill_input["query"]
+        # ...实现你的逻辑...
+        results = []
+        return {"query": query, "results": results}
+```
+3. 在你的 runtime 里注册它（例如自定义 CLI 或脚本）：
+```bash
+skills = [EchoSkill(), CodeSearchSkill()]
+agent = AgentRuntime(router=my_router, skills=skills, long_term=my_ltm)
+```
+### 2. 新增一个 Router
+1. 新建 `skillchain/router/xxx.py`
+2. 继承 `SkillRouter`，实现 `select_skill` 返回 `SkillCall`
+3. 在构建 AgentRuntime 时注入你的 Router
+### 3. 新增一个 Workflow（多步策略）
+1. 新建 `skillchain/workflows/my_workflow.py`
+2. 继承 `Workflow`，在 `run` 里多次调用 `await agent.step(...)`，或者基于 `ShortTermMemory` 设计策略
+
+---
+
+## 🚫 明确不做的事情（Anti-patterns）
+为了保持 SkillChain 的“框架味”，强制避免以下模式：
+- ❌ 用一个巨大无比的 prompt 控制整个 Agent 行为
+- ❌ 在路由中直接执行任务（Router 必须只返回 SkillCall）
+- ❌ Skill 之间互相直接调用，形成隐式依赖网
+- ❌ 把 memory 通过 string 拼接方式偷偷注入到 prompt，变成“隐式状态”
+- ❌ 写一个 if/else 大怪兽在一个脚本里直接决定所有逻辑
+
+推荐的做法是：
+- ✅ 新增 Skill 文件；
+- ✅ 新增 Router 文件（或者扩展已有的 LLM/规则路由）；
+- ✅ 在 Workflow 中组合多步 Agent 行为；
+- ✅ 在 Memory 层显式记录和回放运行轨迹。

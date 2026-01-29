@@ -794,7 +794,7 @@ agent = AgentRuntime(router=my_router, skills=skills, long_term=my_ltm)
 
 ## 🤝 贡献与支持 (Contribution)
 
-**Next AI PlantUML** 是一个开源项目，我们需要您的帮助让它变得更好！
+**SkillChain** 是一个开源项目，我们需要您的帮助让它变得更好！
 
 *   **给个 Star** ⭐：如果您觉得这个项目对您有帮助，请点击右上角的 Star，这是对我最大的鼓励！
 *   **提交 Issue** 🐛：发现 Bug 或有新功能建议？欢迎提交 Issue。
